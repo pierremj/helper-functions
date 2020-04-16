@@ -193,6 +193,11 @@ impute_quantile <- function(x,quant,cols=NA){
 	return(x)
 }
 
+normalize_0to1 <- function(x){
+  #Normalize values in a numeric vector from 0 to 1
+  return((x-min(x))/(max(x)-min(x)))
+}
+
 
 ###2. Format and manipulate data-------------------------------------------
 

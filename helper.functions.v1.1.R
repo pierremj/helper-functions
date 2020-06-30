@@ -367,7 +367,7 @@ plot_protein <- function(x,id,cdesc.group="treatment",cdesc.fill=NA,cdesc.color=
     data <- melt.gct(x) %>% filter(id.x==id) 		
   }
   
-  g<- ggplot(data, aes_string(x=cdesc.group,y="value",group=cdesc.group))+labs(title=id)+theme_bw()
+  g<- ggplot(data, aes_string(x=cdesc.group,y="value"))+labs(title=id)+theme_bw()
   if(!is.na(cdesc.fill) & !is.na(cdesc.color)){
     g<- g+geom_boxplot(aes_string(fill=cdesc.fill),outlier.shape=NA)+
       geom_point(position=position_dodge(width=0.75),

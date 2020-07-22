@@ -695,3 +695,19 @@ gconvert_unique <- function(query,organism,target,...){
   return(x)
   
 }
+
+
+###5. Google Cloud helper functions --------------------------------------------------------------------------------
+
+dl_read_gcp <- function(gcp_path,sep='\t',tmpdir='/srv/tmp',GSUTIL_PATH='~/google-cloud-sdk/bin/gsutil'){
+  system(sprintf('mkdir -p %s',tmpdir))
+  # download
+  new_path = sprintf('%s/%s',tmpdir,basename(gcp_path))
+  if(!file.exists(new_path)){
+    cmd = sprintf('%s cp %s %s', GSUTIL_PATH, gcp_path, tmpdir)
+    system(cmd,ignore.stdout = T,ignore.stderr = T)
+  }
+  # read in the data
+  dt <- fread(new_path,sep=sep,header=T)
+  return(dt)
+}

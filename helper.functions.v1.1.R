@@ -11,6 +11,33 @@ require(gprofiler2)
 
 ###1. GCT Parsing, Normalization, and Filtering function ------------------------------------
 
+sm_to_gct_lfq <- function(x,md,col.suffix="totalIntensity",join.by="sample"){
+  #Function to convert a spectrum mill LFQ ratio report into a gct file
+  #Args:
+  #	x: a spectrum mill lfq report stored as data frame 
+  #	species: species to be selected from the table. If NA, all species are allowed
+  #	col.suffix: the suffix of the columns that contain the data. Spetrum Mill
+  #	provides total intensities (defualt), peptide counts, and spectra counts.
+  #	join.by: Specifies the column that is common between the 
+  #Returns:
+  #	A gct object
+  
+  mat <- x %>% select(ends_with(col.suffix)) %>% as.matrix
+  cn <- data.frame(col = colnames(mat)) %>% separate("col",c("sample",NA)," ") 
+  
+  rownames(mat) <- x$id
+  rdesc <- select(x,-ends_with(col.suffix)) 
+  cdesc <- left_join(cn,md,by=join.by) %>% rename(id = sample)
+  
+  colnames(mat) <- cdesc$id
+  if(ncol(mat)!=nrow(cdesc)|nrow(mat)!=nrow(rdesc)){
+    stop("Column or row annotations do not match 
+		     the matrix size.")
+  }
+  
+  return(new("GCT", mat=mat, rdesc=rdesc, cdesc=cdesc))
+}
+
 sm_to_gct <- function(x,md){
   #Function to convert a spectrum mill tmt ratio report into a gct file
   #Args:
@@ -23,7 +50,7 @@ sm_to_gct <- function(x,md){
   cn <- parse_sm_colnames(colnames(mat))
   colnames(mat) <- cn$sample
   rdesc <- select(x,-contains(" ")) 
-  cdesc <- full_join(cn,md,by="sample") %>% rename(id = sample)
+  cdesc <- left_join(cn,md,by="sample") %>% rename(id = sample)
   if(ncol(mat)!=nrow(cdesc)|nrow(mat)!=nrow(rdesc)){
     stop("Column or row annotations do not match 
 		     the matrix size.")
@@ -133,7 +160,7 @@ make_results <- function(x,contrast.matrix,fit.eb,verbose=F){
   return(res)
 }
 
-make_nested_results <- function(x, contrast.matrix, fit.eb,verbose=F){
+make_nested_results <- function(x, contrast.matrix, fit.eb,verbose=F,logFC_se = F){
   #Calculate q values and generates a result table in nested format
   #Args:
   #	x: a GCT object
@@ -154,7 +181,15 @@ make_nested_results <- function(x, contrast.matrix, fit.eb,verbose=F){
       select(logFC, P.Value, adj.P.Val) %>%
       mutate(Q.Value = qvalue(P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues) %>%
       mutate_at(vars(), signif, 4)
+    
+    
+    if(logFC_se){
+      stats <- stats %>%
+        mutate(logFC_se = (sqrt(fit.eb$s2.post) * fit.eb$stdev.unscaled)[,i])
+    }
+    
     data <- c(data,list(cbind(res,stats)))
+
     
     if(verbose){
       print(i)
@@ -484,7 +519,7 @@ plot_volcano_color <- function(contrasts,results,color.list=NA,qtreshold=0.05,co
   p.tresh <- (results %>% mutate(min = abs(qtreshold-results$Q.Value)) %>% arrange(min))[[1,"P.Value"]]
   
   g <- ggplot(results,aes(logFC,-log10(P.Value),color = id %in% color.list)) + 
-    geom_point(size=2,alpha=0.7) + 
+    geom_point(size=2,alpha=0.3) + 
     scale_color_manual(values=colors,labels=c("False","True"), name = color.name)+
     geom_hline(yintercept = -log10(p.tresh))+
     labs(x= paste0("Log2(",regmatches(contrasts,regexpr("^[[:alnum:]]+",contrasts)),

@@ -195,7 +195,7 @@ impute_quantile <- function(x,quant,cols=NA){
 
 normalize_0to1 <- function(x){
   #Normalize values in a numeric vector from 0 to 1
-  return((x-min(x))/(max(x)-min(x)))
+  return((x-min(x,na.rm=T))/(max(x,na.rm=T)-min(x,na.rm = T)))
 }
 
 
@@ -213,7 +213,7 @@ make_results <- function(x,contrast.matrix,fit.eb,one.sided=F,lower=F){
 	
 	for(i in colnames(contrast.matrix)){
 		
-		stats <- topTable(fit.eb, number = nrow(x), sort.by = "none", coef = i) %>%
+		stats <- topTable(fit.eb, number = nrow(x@mat), sort.by = "none", coef = i) %>%
 			select(logFC, P.Value, adj.P.Val) 
 		
 		if(one.sided){
@@ -234,7 +234,7 @@ make_results <- function(x,contrast.matrix,fit.eb,one.sided=F,lower=F){
 	return(res)
 }
 
-make_nested_results <- function(x, contrast.matrix, fit.eb,one.sided=F,lower=F){
+make_nested_results <- function(x, contrast.matrix, fit.eb,one.sided=F,lower=F,qval=T){
 	#Calculate q values and generates a result table in nested format
 	#Args:
 	#	x: a GCT object
@@ -258,8 +258,10 @@ make_nested_results <- function(x, contrast.matrix, fit.eb,one.sided=F,lower=F){
 			stats$P.Value <- limma.one.sided(fit.eb)[,i]
 		}
 		
+		if(qval){
 		stats <- stats %>% mutate(Q.Value = qvalue(P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues) %>%
 			mutate_at(vars(), signif, 4)
+		}
 		
 		data <- c(data,list(cbind(res,stats)))
 		
@@ -321,6 +323,20 @@ limma.one.sided = function (fit,lower=FALSE) {
 	se.coef <- sqrt(fit$s2.post) * fit$stdev.unscaled
 	df.total <- fit$df.prior + fit$df.residual
 	pt(fit$t, df=df.total, lower.tail=lower)
+}
+
+get_significant_summary <- function(results,qtreshold=0.05,logFC = 0){
+	#Creates a table that summarizes the number of significantly regulated genes
+	#Args:
+	#	results: A nested result table as produced by make_nested_results
+	#	qtreshold: q-value treshold to count a significant differential abundance
+	output <- results %>% mutate(
+		total = map_dbl(data,function(x){sum(!is.na(x$Q.Value<qtreshold))}),
+		significant = map_dbl(data,function(x){sum(x$Q.Value<qtreshold & abs(x$logFC)>logFC,na.rm=T)}),
+		up = map_dbl(data,function(x){sum(x$logFC>logFC & x$Q.Value<qtreshold,na.rm=T)}),
+		down = map_dbl(data,function(x){sum(x$logFC< (-1*logFC) & x$Q.Value<qtreshold,na.rm=T)})
+	) %>% select(-data)
+	return(output)
 }
 
 ###3. Produce plots-----------------------------------------------------------------
@@ -406,13 +422,16 @@ plot_protein <- function(x,id,cdesc.group="treatment",cdesc.fill=NA){
 	return(g)
 }
 
-plot_volcano <- function(contrasts,results,qtreshold=0.05,lab.sig=F){
+plot_volcano <- function(contrasts,results,qtreshold=0.05,lab.sig=F,qval=T){
 	#Generates a volcano plot using p-values and logFC ratios
 	#Args:
 	#	contrasts: Name of the contrast being plotted
 	#	results: a results table with logFC, q values, and p values
 	#	qtreshold: The q-value treshold to be used. Default is 0.05.
 	#	lab.sig: Whether to add labels to the significant data points	
+  if(!qval){
+    results <- results %>% mutate(Q.Value = adj.P.Val)
+  }
 	results <- results[!is.na(results$Q.Value),]
 	
 	g <- ggplot(results,aes(logFC,-log10(P.Value),color = Q.Value < qtreshold)) + 

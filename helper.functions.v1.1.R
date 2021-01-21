@@ -39,7 +39,44 @@ sm_to_gct_lfq <- function(x,md,col.suffix="totalIntensity",join.by="sample"){
   return(new("GCT", mat=mat, rdesc=rdesc, cdesc=cdesc))
 }
 
-sm_to_gct <- function(x,md=NA){
+sm_to_gct <- function(x,md=NA,md.join = "sample"){
+  #Function to convert a spectrum mill tmt ratio report into a gct file
+  #Args:
+  #	x: a spectrum mill tmt ratio report stored as data frame 
+  #	md: Column metadata
+  # md.join: Variable to join the metadata table
+  #Returns:
+  #	A gct object
+  
+  mat <- select(x,contains(":")) %>% as.matrix
+  cdesc <- parse_sm_colnames_ratio(colnames(mat))
+  rdesc <- select(x,-contains(" ")) 
+  
+  #If the current ids are not unique, use plex_tmtlabels
+  if(sum(duplicated(cdesc$sample))>0){
+    cdesc <- cdesc %>%
+      mutate(id = paste0(plex,"_",tmtlabel))
+  } else {
+    cdesc <- cdesc %>% mutate(id = sample)
+  } 
+  
+  #If there is sample metadata, add to cdesc
+  if(!is.na(md)){
+    cdesc <- left_join(cdesc,md,by=md.join) 
+  } 
+  
+  if(ncol(mat)!=nrow(cdesc)|nrow(mat)!=nrow(rdesc)){
+    stop("Column or row annotations do not match 
+		     the matrix size.")
+  }
+  
+  rownames(mat) <- x$id
+  colnames(mat) <- cdesc$id
+  
+  return(new("GCT", mat=mat, rdesc=rdesc, cdesc=cdesc))
+}
+
+sm_to_gct_tmtintensity <- function(x,md=NA,md.join = "id"){
   #Function to convert a spectrum mill tmt ratio report into a gct file
   #Args:
   #	x: a spectrum mill tmt ratio report stored as data frame 
@@ -47,22 +84,24 @@ sm_to_gct <- function(x,md=NA){
   #Returns:
   #	A gct object
   
-  mat <- select(x,contains(":")) %>% as.matrix
-  cdesc <- parse_sm_colnames(colnames(mat))
+  mat <- select(x,contains(", ")) %>% as.matrix
+  cdesc <- parse_sm_colnames_intensity(colnames(mat))
   rdesc <- select(x,-contains(" ")) 
+  
+
+  #If the current ids are not unique, use plex_tmtlabels
+  if(sum(duplicated(cdesc$sample))>0){
+    cdesc <- cdesc %>%
+      mutate(id = paste0(plex,"_",tmtlabel))
+  } else {
+    cdesc <- cdesc %>% mutate(id = sample)
+  } 
   
   #If there is sample metadata, add to cdesc
   if(!is.na(md)){
-    cdesc <- left_join(cdesc,md,by="sample") %>% rename(id = sample)
-  } else {
-    cdesc <- cdesc %>% rename(id = sample)
-  }
+    cdesc <- left_join(cdesc,md,by=md.join) 
+  } 
   
-  #If the current ids are not unique, use plex-tmtlabels
-  if(sum(duplicated(cdesc$id))>0){
-    cdesc <- cdesc %>% rename(sample = id) %>%
-      mutate(id = paste0(plex,"_",tmtlabel))
-  }
   
   if(ncol(mat)!=nrow(cdesc)|nrow(mat)!=nrow(rdesc)){
     stop("Column or row annotations do not match 
@@ -77,7 +116,7 @@ sm_to_gct <- function(x,md=NA){
 
 
 
-parse_sm_colnames <- function(x){
+parse_sm_colnames_ratio <- function(x){
   #Function to parse the column names for TMT ratio datasets obtained from the process report of spectrum mill
   #Args:
   #	x: the column names for tmt ratios obtained by spectrum mill process report
@@ -90,6 +129,35 @@ parse_sm_colnames <- function(x){
               sample = str_match(sample," (.*):")[,2])
   
 }
+
+parse_sm_colnames_intensity <- function(x){
+  #Function to parse the column names for TMT ratio datasets obtained from the process report of spectrum mill
+  #Args:
+  #	x: the column names for tmt ratios obtained by spectrum mill process report
+  #Returns:
+  #	A data frame with the plex, tmt label used, and sample name as columns
+  
+  data.frame(col = x) %>% separate("col",c("plex","tmtlabel","sample"),", ")
+}
+
+gct_ratio <- function(x,denom){
+  #Convert data to log2 ratios by dividing to the median of samples selected as denominators
+  #Args:
+  #	x: a GCT object
+  #	denom: Character vector indicating the sample ids to be used as denominators
+  
+  if(length(denom)>1){
+    d <- apply(x@mat[,denom],1,mean,na.rm=T)
+  } else {
+    d <- x@mat[,denom]
+  }
+  
+  
+  #x <- subset_gct(x,cid = setdiff(colnames(x@mat),denom)) 
+  x@mat <- log2(x@mat/d)
+  return(x)
+}
+
 
 median_mad_norm <- function(x,mad=T){
   #Perform median normalization

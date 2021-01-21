@@ -8,6 +8,7 @@ require(RColorBrewer)
 require(gridExtra)
 require(UpSetR)
 require(gprofiler2)
+require(cowplot)
 
 ###1. GCT Parsing, Normalization, and Filtering function ------------------------------------
 
@@ -38,25 +39,42 @@ sm_to_gct_lfq <- function(x,md,col.suffix="totalIntensity",join.by="sample"){
   return(new("GCT", mat=mat, rdesc=rdesc, cdesc=cdesc))
 }
 
-sm_to_gct <- function(x,md){
+sm_to_gct <- function(x,md=NA){
   #Function to convert a spectrum mill tmt ratio report into a gct file
   #Args:
   #	x: a spectrum mill tmt ratio report stored as data frame 
   #	md: Column metadata
   #Returns:
   #	A gct object
+  
   mat <- select(x,contains(":")) %>% as.matrix
-  rownames(mat) <- x$id
-  cn <- parse_sm_colnames(colnames(mat))
-  colnames(mat) <- cn$sample
+  cdesc <- parse_sm_colnames(colnames(mat))
   rdesc <- select(x,-contains(" ")) 
-  cdesc <- left_join(cn,md,by="sample") %>% rename(id = sample)
+  
+  #If there is sample metadata, add to cdesc
+  if(!is.na(md)){
+    cdesc <- left_join(cdesc,md,by="sample") %>% rename(id = sample)
+  } else {
+    cdesc <- cdesc %>% rename(id = sample)
+  }
+  
+  #If the current ids are not unique, use plex-tmtlabels
+  if(sum(duplicated(cdesc$id))>0){
+    cdesc <- cdesc %>% rename(sample = id) %>%
+      mutate(id = paste0(plex,"_",tmtlabel))
+  }
+  
   if(ncol(mat)!=nrow(cdesc)|nrow(mat)!=nrow(rdesc)){
     stop("Column or row annotations do not match 
 		     the matrix size.")
   }
+  
+  rownames(mat) <- x$id
+  colnames(mat) <- cdesc$id
+  
   return(new("GCT", mat=mat, rdesc=rdesc, cdesc=cdesc))
 }
+
 
 
 parse_sm_colnames <- function(x){
@@ -399,7 +417,7 @@ plot_protein <- function(x,id,cdesc.group="treatment",cdesc.fill=NA,cdesc.color=
   if(class(x)[1] != "GCT"){
     data <- x %>% filter(id.x==id)
   }else{
-    data <- melt.gct(x) %>% filter(id.x==id) 		
+    data <- subset_gct(x,rid = id) %>% melt_gct(x) #%>% filter(id.x==id) 		
   }
   
   g<- ggplot(data, aes_string(x=cdesc.group,y="value"))+labs(title=id)+theme_bw()
@@ -746,3 +764,48 @@ dl_read_gcp <- function(gcp_path,sep='\t',tmpdir='/srv/tmp',GSUTIL_PATH='~/googl
   dt <- fread(new_path,sep=sep,header=T)
   return(dt)
 }
+
+
+###6. MoTrPAC MAWG visualization functions -------------------------------------------------------------------------
+plot_dea <- function(dea, id,flip_sex = F){
+  if(!exists("sex_cols")){devtools::source_url("https://raw.githubusercontent.com/MoTrPAC/motrpac-mawg/master/pass1b-06/figures/motrpac_colors_abbr.R?token=ADAK7J5SXWUO4S43IQV467K72DXXM")
+}
+  dea <- dea %>% filter(prot_id == id)
+  if(flip_sex) dea$sex <- factor(dea$sex,levels = c("Male","Female")) 
+  results <- list()
+  for(i in unique(dea$feature_id)){
+    g<- dea %>% filter(feature_id == i) %>% 
+      ggplot(aes(x = paste0(sex,"_",comparison_group), y = logfc, fill = sex))+
+      geom_col(color="gray25")+
+      geom_errorbar(aes(ymin=logfc-logfc_se,ymax=logfc+logfc_se,width=.2))+
+      geom_hline(yintercept = 0,color="gray25")+
+      scale_fill_manual(values=sex_cols)+
+      facet_wrap(~sex,scales="free_x")+
+      labs(x="",y="logFC",title=i)+
+      theme_cowplot()+
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+    
+    results[[i]] <- g
+    
+  }
+  return(results)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

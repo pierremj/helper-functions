@@ -201,7 +201,7 @@ normalize_0to1 <- function(x){
 
 ###2. Format and manipulate data-------------------------------------------
 
-make_results <- function(x,contrast.matrix,fit.eb,one.sided=F,lower=F){
+make_results <- function(x,contrast.matrix,fit.eb,one.sided=F,lower=F,qval =T){
 	#Calculate q values and generates a result table
 	#Args:
 	#	x: a GCT object
@@ -220,9 +220,15 @@ make_results <- function(x,contrast.matrix,fit.eb,one.sided=F,lower=F){
 			stats$P.Value <- limma.one.sided(fit.eb)[,i]
 		}
 		
-		stats <- stats %>%
-			mutate(Q.Value = qvalue(P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues) %>%
-			mutate_at(vars(), signif, 4)
+		if(qval){
+			stats <- stats %>%
+				mutate(Q.Value = qvalue(P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues) %>%
+				mutate_at(vars(), signif, 4)
+		} else {
+			stats <- stats %>%
+				mutate(Q.Value = adj.P.Val) %>%
+				mutate_at(vars(), signif, 4)
+		}
 		
 		colnames(stats) <- paste0(i,".",colnames(stats))
 		res <- cbind(res,stats)
@@ -261,6 +267,8 @@ make_nested_results <- function(x, contrast.matrix, fit.eb,one.sided=F,lower=F,q
 		if(qval){
 		stats <- stats %>% mutate(Q.Value = qvalue(P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues) %>%
 			mutate_at(vars(), signif, 4)
+		} else {
+			stats <- stats %>% mutate(Q.Value = adj.P.Val)	
 		}
 		
 		data <- c(data,list(cbind(res,stats)))
@@ -467,10 +475,57 @@ plot_volcano <- function(contrasts,results,qtreshold=0.05,lab.sig=F,qval=T){
 	return(g)
 }
 
-plot_volcano_color <- function(contrasts,results,color.list="Gray",qtreshold=0.05,color.name="",
+plot_volcano_color <- function(contrasts,results,color.list=NA,qtreshold=0.05,color.name="",
 			       colors=c("Grey",brewer.pal(n=3,name = "Set2")[2]),
-			       labels=character(),alpha.list = 0.7,shape.list=16,
-			       shape.name="",shapes=c(4,15,16,17)){
+			       xlims = NA, ylims = NA,labels=character(),alpha.list = 0.7){
+	#Generates a volcano plot using p-values and logFC ratios
+	#Args:
+	#	contrasts: Name of the contrast being plotted
+	#	results: a results table with logFC, q values, and p values
+	#	color.list: A vector with color categories to be plotted
+	#	qtreshold: The q-value treshold to be used. Default is 0.05.
+	to.keep <- !is.na(results$Q.Value)
+	results <- results[to.keep,]
+	p.tresh <- (results %>% mutate(min = abs(qtreshold-results$Q.Value)) %>% arrange(min))[[1,"P.Value"]]
+	
+	g <- ggplot(results,aes(logFC,-log10(P.Value),color = id %in% color.list)) + 
+		geom_point(size=2,alpha=0.3) + 
+		scale_color_manual(values=colors,labels=c("False","True"), name = color.name)+
+		geom_hline(yintercept = -log10(p.tresh))+
+		labs(x= paste0("Log2(",regmatches(contrasts,regexpr("^[[:alnum:]]+",contrasts)),
+			       " over ",regmatches(contrasts
+			       		    ,regexpr("[[:alnum:]]+$",contrasts)),")"), 
+		     y="-Log10(p-value)",
+		     title = paste0("Comparison ",contrasts),
+		     subtitle = paste0(sum(results$Q.Value<qtreshold)," significant proteins out of ",nrow(results)))+
+		theme_bw()+
+		annotate("text",x=max(results$logFC),y=-log10(p.tresh),
+			 label=paste0("q value < ",qtreshold),vjust = -1,hjust="inward")	
+	
+	
+	if(!is.na(xlims[1])){
+		g <- g+scale_x_continuous(limits=xlims)
+	}
+	
+	if(!is.na(ylims[1])){
+		g <- g+scale_y_continuous(limits=ylims)
+	}
+	
+	if(length(labels)>0){
+		labels <- labels[to.keep]
+		g<-g+geom_text_repel(aes(label= as.character(labels)),nudge_y = 1)
+	}
+	
+	
+	return(g)
+}
+
+plot_volcano_color2 <- function(contrasts,results,color.list="Gray",qtreshold=0.05,color.name="",
+				colors=c("Grey",brewer.pal(n=3,name = "Set2")[2]),
+				labels=character(), label.size = 5,
+				alpha.list = 0.7,
+				shape.list="", shape.name="",shapes=c(16,4,15,17),
+				xlims = NA, ylims = NA){
 	#Generates a volcano plot using p-values and logFC ratios
 	#Args:
 	#	contrasts: Name of the contrast being plotted
@@ -481,8 +536,8 @@ plot_volcano_color <- function(contrasts,results,color.list="Gray",qtreshold=0.0
 	#results <- results[!is.na(results$adj.P.Val),]
 	p.tresh <- (results %>% mutate(min = abs(qtreshold-results$Q.Value)) %>% arrange(min))[[1,"P.Value"]]
 	
-	g <- ggplot(results,aes(logFC,-log10(P.Value),color = color.list,alpha = alpha.list)) + 
-		geom_point(size=2,aes(shape=shape.list)) + 
+	g <- ggplot(results,aes(logFC,-log10(P.Value),color = color.list)) + 
+		geom_point(size=2,aes(shape=shape.list,alpha = alpha.list)) + 
 		scale_shape_manual(values=shapes,name=shape.name)+
 		scale_color_manual(values=colors, name = color.name)+
 		geom_hline(yintercept = -log10(p.tresh))+
@@ -497,9 +552,15 @@ plot_volcano_color <- function(contrasts,results,color.list="Gray",qtreshold=0.0
 		annotate("text",x=max(results$logFC),y=-log10(p.tresh),
 			 label=paste0("q value < ",qtreshold),vjust = -1,hjust="inward")
 	if(length(labels)>0){
-		g<-g+geom_text_repel(aes(label= as.character(labels)),nudge_x = -1)
+		g<-g+geom_text_repel(aes(label= as.character(labels)),size=label.size)
+	}
+	if(!is.na(xlims[1])){
+		g <- g+scale_x_continuous(limits=xlims)
 	}
 	
+	if(!is.na(ylims[1])){
+		g <- g+scale_y_continuous(limits=ylims)
+	}
 	return(g)
 }
 

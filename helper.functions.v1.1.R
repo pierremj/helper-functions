@@ -10,8 +10,16 @@ require(UpSetR)
 require(gprofiler2)
 require(cowplot)
 
-###1. GCT Parsing, Normalization, and Filtering function ------------------------------------
 
+#Color specification
+sex_cols = c('M' = '#5555ff',
+             'Male' = '#5555ff',
+             'male' = '#5555ff',
+             'F' = '#ff6eff',
+             'Female' = '#ff6eff',
+             'female' = '#ff6eff')
+
+###1. GCT Parsing, Normalization, and Filtering function ------------------------------------
 sm_to_gct_lfq <- function(x,md,col.suffix="totalIntensity",join.by="sample"){
   #Function to convert a spectrum mill LFQ ratio report into a gct file
   #Args:
@@ -503,6 +511,58 @@ plot_protein <- function(x,id,cdesc.group="treatment",cdesc.fill=NA,cdesc.color=
       geom_point(position=position_dodge(width=0.75))
   }
   return(g)
+}
+
+plot_protein_dea <- function(x,id){
+  #Plot the values of a MoTrPAC DEA table for a specific protein
+  #Args:
+  #	x: training_dea table
+  #	id: id of the protein to be plotted
+  for (i in unique(x$tissue)){
+    x.sub <- x %>% filter(feature_ID == id & tissue == i) 
+    if(nrow(x.sub)>0){
+      g <-  x.sub %>%
+        ggplot(aes(x= comparison_group, y=logFC, color = sex,group=sex)) + 
+        geom_point()+
+        geom_line()+
+        geom_errorbar(aes(ymin = logFC - logFC_se,
+                          ymax = logFC + logFC_se),
+                      width=0.2)+
+        theme_bw()+
+        scale_color_manual(values=sex_cols)+
+        geom_hline(yintercept = 0)+
+        labs(x = "Sex and time point", y = "log2 fold-change vs sedentary", title = id, subtitle = i) 
+      plot(g)
+    }
+    
+  }
+  return()
+}
+
+plot_metab_dea <- function(x,id){
+  #Plot the values of a MoTrPAC DEA table for a specific metabolite
+  #Args:
+  #	x: training_dea table
+  #	id: id of the metaboliteto be plotted
+  for (i in unique(x$tissue)){
+    x.sub <- x %>% filter(feature_ID == id & tissue == i) 
+    if(nrow(x.sub)>0){
+      g <-  x.sub %>%
+        ggplot(aes(x= comparison_group, y=effect_size, color = sex,group=sex)) + 
+        geom_point()+
+        geom_line()+
+        geom_errorbar(aes(ymin = effect_size - effect_size_se,
+                          ymax = effect_size + effect_size_se),
+                      width=0.2)+
+        theme_bw()+
+        scale_color_manual(values=sex_cols)+
+        geom_hline(yintercept = 0)+
+        labs(x = "Sex and time point", y = "log2 fold-change vs sedentary", title = id, subtitle = i) 
+      plot(g)
+    }
+    
+  }
+  return()
 }
 
 plot_volcano <- function(contrasts,results,qtreshold=0.05,xlims = NA, ylims = NA){

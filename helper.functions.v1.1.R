@@ -225,7 +225,7 @@ filter_gct <- function(x,column, value){
 
 ###2. Format and manipulate data-------------------------------------------
 
-make_results <- function(x,contrast.matrix,fit.eb,verbose=F){
+make_results <- function(x,contrast.matrix,fit.eb,verbose=F,logFC_se = F){
   #Calculate q values and generates a result table
   #Args:
   #	x: a GCT object
@@ -238,11 +238,19 @@ make_results <- function(x,contrast.matrix,fit.eb,verbose=F){
   for(i in colnames(contrast.matrix)){
     
     stats <- topTable(fit.eb, number = nrow(x@mat), sort.by = "none", coef = i) %>%
-      select(logFC, P.Value, adj.P.Val) %>%
+      select(logFC, P.Value, adj.P.Val,t) %>%
       mutate(Q.Value = qvalue(P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues) %>%
       mutate_at(vars(), signif, 4)
+    
+    if(logFC_se){
+      stats <- stats %>%
+        mutate(logFC_se = (sqrt(fit.eb$s2.post) * fit.eb$stdev.unscaled)[,i])
+    }
+    
     colnames(stats) <- paste0(i,".",colnames(stats))
     res <- cbind(res,stats)
+    
+
     
     if(verbose){
       print(i)
@@ -272,7 +280,7 @@ make_nested_results <- function(x, contrast.matrix, fit.eb,verbose=F,logFC_se = 
   for(i in colnames(contrast.matrix)){
     
     stats <- topTable(fit.eb, number = nrow(res), sort.by = "none", coef = i) %>%
-      select(logFC, P.Value, adj.P.Val) %>%
+      select(logFC, P.Value, adj.P.Val,t) %>%
       mutate(Q.Value = qvalue(P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues) %>%
       mutate_at(vars(), signif, 4)
     
@@ -923,6 +931,36 @@ plot_dea <- function(dea, id,flip_sex = F){
 
 
 
+###7. Statistical analysis------------------------------------------------------
+
+limma_res_extract_se<-function(limma_res,e_fit,
+                               effect_col="logFC",t_col="t",colname=NULL){
+  #Returns the standard error estimate
+  #Args:
+  #	limma_res: Limma results table as extracted by topTable
+  #	e_fit: Empirical bayes fit 
+  #	effect_col: The name of the column with the effect size
+  # t_col: The name of the column with the T statistics
+  # colname: Not used
+  
+  # method 1
+  effects = limma_res[[effect_col]]
+  ts = limma_res[[t_col]]
+  ses1 = effects/ts
+  if(is.null(colname)){
+    return(ses1)
+  }
+  # method 2
+  # ses2 = sqrt(e_fit$s2.post) * e_fit$stdev.unscaled
+  # ts1 = effects/ses1
+  # ts2 = effects/ses2[,colname]
+  # if(max(abs(ts-ts1),na.rm = T) > 1e-10 || 
+  #    max(abs(ts-ts2),na.rm = T) > 1e-10 || 
+  #    max(abs(ts1-ts2),na.rm = T)>1e-10){
+  #   print("Warning: t-stats from computed ses are incompatible with limma's output")
+  # }
+  # return(ses2[,colname])
+}
 
 
 

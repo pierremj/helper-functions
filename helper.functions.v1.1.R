@@ -513,6 +513,9 @@ plot_protein <- function(x,id,cdesc.group="treatment",cdesc.fill=NA,cdesc.color=
   } else if(!is.na(cdesc.fill) ){
     g<- g+geom_boxplot(aes_string(fill=cdesc.fill),outlier.shape=NA)+
       geom_point(position=position_dodge(width=0.75),aes_string(group=cdesc.fill))
+  } else if(!is.na(cdesc.color) ){
+    g<- g+geom_boxplot(aes_string(color=cdesc.color),outlier.shape=NA)+
+      geom_point(position=position_dodge(width=0.75),aes_string(group=cdesc.color))
   }
   
   else{
@@ -583,8 +586,8 @@ plot_volcano <- function(contrasts,results,qtreshold=0.05,xlims = NA, ylims = NA
   results <- results[!is.na(results$Q.Value),]
   
   g <- ggplot(results,aes(logFC,-log10(P.Value),color = Q.Value < qtreshold)) + 
-    geom_point(size=2,alpha=0.7) + 
-    scale_color_manual(values= c("Grey",brewer.pal(n=3,name = "Set2")[1]),
+    geom_point(size=2,alpha=0.5) + 
+    scale_color_manual(values= c("Grey","#0000C9"),#brewer.pal(n=3,name = "Set2")[1]),
                        labels=c("Non-significant","Significant"),
                        name = paste0("q value < ",qtreshold))+
     labs(x= paste0("Log2(",regmatches(contrasts,regexpr("^[[:alnum:]]+",contrasts))," over ",regmatches(contrasts,regexpr("[[:alnum:]]+$",contrasts)),")"), 

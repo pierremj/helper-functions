@@ -149,7 +149,7 @@ parse_sm_colnames_intensity <- function(x){
 }
 
 gct_ratio <- function(x,denom){
-  #Convert data to log2 ratios by dividing to the median of samples selected as denominators
+  #Convert data to log2 ratios by dividing to the median of samples selected as denominators.
   #Args:
   #	x: a GCT object
   #	denom: Character vector indicating the sample ids to be used as denominators
@@ -164,6 +164,37 @@ gct_ratio <- function(x,denom){
   #x <- subset_gct(x,cid = setdiff(colnames(x@mat),denom)) 
   x@mat <- log2(x@mat/d)
   return(x)
+}
+
+#' Convert intensities to ratios for multiplex studies
+#' Convert data to log2 ratios by dividing to the median of samples selected as denominators.
+#' 
+#' @param x a GCT object
+#' @param denom Character vector indicating the sample ids to be used as denominators
+#' @param plex_column A string indicating the column in 'cdesc' which separate the datset by plex
+#'
+#' @return
+#' @export
+#'
+#' @examples
+gct_ratio_multiplex <- function(x,denom,plex_column = "plex"){
+  x_full <- x
+  
+  for(i in unique(x@cdesc[,plex_column])  ){
+    plex_samples <-  x@cdesc[,plex_column] == i 
+    
+    x <- subset_gct(x_full,cid = plex_samples)
+    
+    if(length(denom)>1){
+      d <- apply(x@mat[,denom],1,mean,na.rm=T)
+    } else {
+      d <- x@mat[,denom]
+    }
+
+    x@mat <- log2(x@mat/d)
+    
+    x_full@mat[,plex_samples] <- x@mat
+  }
 }
 
 

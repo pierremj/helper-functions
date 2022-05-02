@@ -170,20 +170,25 @@ gct_ratio <- function(x,denom){
 #' Convert data to log2 ratios by dividing to the median of samples selected as denominators.
 #' 
 #' @param x a GCT object
-#' @param denom Character vector indicating the sample ids to be used as denominators
+#' @param denom_sample Character vector indicating the id or ids to be used as 
+#' denominators as found in the 'cdesc' column identified by `denom_column`
+#' @param denom_column A string indicating the column in 'cdesc' which 
+#' identifies the denominator or denominators to be used per plex
 #' @param plex_column A string indicating the column in 'cdesc' which separate the datset by plex
 #'
 #' @return
 #' @export
 #'
 #' @examples
-gct_ratio_multiplex <- function(x,denom,plex_column = "plex"){
+gct_ratio_multiplex <- function(x,denom_samples, denom_column,plex_column = "plex"){
   x_full <- x
   
   for(i in unique(x@cdesc[,plex_column])  ){
     plex_samples <-  x@cdesc[,plex_column] == i 
     
     x <- subset_gct(x_full,cid = plex_samples)
+    
+    denom <- x@cid[x@cdesc[,denom_column] %in% denom_samples]
     
     if(length(denom)>1){
       d <- apply(x@mat[,denom],1,mean,na.rm=T)

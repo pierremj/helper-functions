@@ -263,7 +263,7 @@ filter_gct <- function(x,column, value){
 
 ###2. Format and manipulate data-------------------------------------------
 
-make_results <- function(x,contrast.matrix,fit.eb,verbose=F,logFC_se = F){
+make_results <- function(x,contrast.matrix,fit.eb,verbose=F,logFC_se = F,storey_q = T){
   #Calculate q values and generates a result table
   #Args:
   #	x: a GCT object
@@ -277,8 +277,14 @@ make_results <- function(x,contrast.matrix,fit.eb,verbose=F,logFC_se = F){
     
     stats <- topTable(fit.eb, number = nrow(x@mat), sort.by = "none", coef = i) %>%
       select(logFC, P.Value, adj.P.Val,t) %>%
-      mutate(Q.Value = qvalue(P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues) %>%
       mutate_at(vars(), signif, 4)
+    
+    if(storey_q){
+      stats$Q.Value <- qvalue(stats$P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues
+    } else {
+      stats$Q.Value <- stats$adj.P.Val
+    }
+    
     
     if(logFC_se){
       stats <- stats %>%
@@ -300,7 +306,7 @@ make_results <- function(x,contrast.matrix,fit.eb,verbose=F,logFC_se = F){
   return(res)
 }
 
-make_nested_results <- function(x, contrast.matrix, fit.eb,verbose=F,logFC_se = F){
+make_nested_results <- function(x, contrast.matrix, fit.eb,verbose=F,logFC_se = F,storey_q=T){
   #Calculate q values and generates a result table in nested format
   #Args:
   #	x: a GCT object
@@ -319,8 +325,15 @@ make_nested_results <- function(x, contrast.matrix, fit.eb,verbose=F,logFC_se = 
     
     stats <- topTable(fit.eb, number = nrow(res), sort.by = "none", coef = i) %>%
       select(logFC, P.Value, adj.P.Val,t) %>%
-      mutate(Q.Value = qvalue(P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues) %>%
       mutate_at(vars(), signif, 4)
+    
+    if(storey_q){
+      stats$Q.Value <- qvalue(stats$P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues
+    } else {
+      stats$Q.Value <- stats$adj.P.Val
+    }
+    
+    
     
     
     if(logFC_se){
@@ -353,6 +366,9 @@ make_results_ftest <- function(x,fit.eb,coef=NULL,verbose=F,...){
   stats <- topTable(fit.eb, number = nrow(x@mat), sort.by = "none", coef = coef,...) %>%
     mutate(Q.Value = qvalue(P.Value, fdr.level=0.05, pi0.method="bootstrap")$qvalues) %>%
     mutate_at(vars(), signif, 4)
+  
+  
+  
   res <- cbind(res,stats)
   if(verbose){
     summary(qvalue(stats$P.Value))
@@ -1062,9 +1078,144 @@ limma_res_extract_se<-function(limma_res,e_fit,
 }
 
 
+pfizer_colors <- function(color = NA,secondary = F){
+  if(!secondary){
+    colors <- c(
+      primary1 = "#0000C9",
+      primary2 = "#0095FF"
+    )
+  } else{
+    colors <- c(
+      secondary1 = "#0DBDBA",
+      secondary2 = "#67BB6E",
+      secondary3 = "#9D73F7",
+      secondary4 = "#D95776",
+      secondary5 = "#F49C34",
+      secondary6 = "#F8DF5A",
+      secondary7 = "#F4DDBA"
+    )
+  }
+  
+  if(is.na(color)){
+    return(unname(colors))
+  } else{
+    return(colors[[color]])
+  }
+}
 
 
 
+
+#' Find kinase motifs within the protein by querying the scansite4.mit.edu proteinscan tool.
+#'
+#' @param id Protein identifier to be queried. This should match the database 
+#' defined in data_source.The default is 'swissprot' which requires unirprot 
+#' entry id (e.g., ZO3_MOUSE)
+#' @param data_source Database used for the query. Defaults to 'swissprot' 
+#' which queries the uniprot database.
+#' @param motif_class Organism class used for the motif query. Currently available options are 'MAMMALIAN' and 'YEAST'.
+#' @param motif_name Specific motifs to be scanned for. An empty string 
+#' (default) will query all available motifs 
+#' @param stringency Character specifying motif score stringency. Three levels are available [High|Medium|Low]. These would return motifs with scores in the top 0.002, 0.01, and 0.05 percentile respectively.
+#'
+#' @return A table showing motif name, motif name abbreviation, score 
+#' percentile, site position, and site flanking sequence (+/- 7 amino acids)
+#' @export
+#'
+#' @examples
+motif_scan <- function(id, data_source = "swissprot", 
+                       motif_class = "MAMMALIAN", motif_name = "",
+                       stringency = "High"){
+  query_string <- paste0(
+    "http://scansite4.mit.edu/webservice/proteinscan/identifier=",
+    id,
+    "/dsshortname=",
+    data_source,
+    "/motifclass=",
+    motif_class,
+    "/motifshortnames=",
+    motif_name,
+    "/stringency=",
+    stringency
+  )
+  
+  request_timeout <- T
+  
+  tryCatch({
+    r <- GET(query_string)
+    request_timeout <- F
+  }, error = function(e){
+    print(e)
+  })
+  
+  #Check for success of query
+  if(status_code(r) != 200 | request_timeout){
+    print(paste0("Query failed for entry ",id,"! Please double check spelling of input parameters.",
+                 "HTML error = ", status_code(r)))
+    return(data.frame())
+  }
+  
+  silent_name_repair <- function(x){vctrs::vec_as_names(names=x, repair = "unique", quiet = T)}
+  
+  #Extract query content
+  return_table <- r %>%
+    content(encoding= "UTF-8") %>% 
+    as_list
+  
+  #Remove information not related to the predicted site
+  return_table$proteinScanResult <- 
+    return_table$proteinScanResult[names(return_table$proteinScanResult) == "predictedSite"]
+  
+  #Transform to table format
+  return_table <- return_table %>%  
+    as_tibble %>%
+    unnest_wider(proteinScanResult, names_repair = ~ vctrs::vec_as_names(..., quiet = TRUE)) %>%
+    select(-starts_with(".")) %>%
+    drop_na %>%
+    mutate_all(unlist) %>%
+    as_data_frame()
+  
+  return(return_table)
+  
+}
+
+
+#' Make a contrast list using all possible nums and denoms pairs
+#'
+#' @param nums A character vector of variables to use as numerators
+#' @param denoms A character vector of variables to use as denominator
+#' @param contrast_table Contrast table to add values to
+#'
+#' @return A contrast table
+#' @export
+#'
+#' @examples
+define_contrasts <- function(nums,denoms,contrast_table = NULL){
+  
+  #Initialize contrast table if not one available
+  if(is.null(contrast_table)){
+    contrast_table <- data.frame(nums = c(),denoms =c())
+  }
+  
+  #Add all combinations of nums and denoms
+  contrast_table <- 
+    rbind(
+      contrast_table,
+      data.frame(
+        nums = rep(nums,length(denoms)),
+        denoms = rep(denoms,each = length(nums))
+      )
+    ) %>%
+    
+    #Check for duplicates and same nums and denoms
+    dplyr::distinct() %>%
+    dplyr::filter(nums != denoms) %>%
+    
+    #Sort columns
+    dplyr::arrange(nums, denoms)
+  
+  return(contrast_table)
+}
 
 
 

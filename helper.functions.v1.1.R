@@ -740,7 +740,8 @@ plot_volcano_label <- function(contrasts,results,qtreshold=0.05,xlims = NA, ylim
   #	qtreshold: The q-value treshold to be used. Default is 0.05.
   results <- results[!is.na(results$Q.Value),]
   
-  g <- ggplot(results,aes(logFC,-log10(P.Value),color = Q.Value < qtreshold)) + 
+  g <- ggplot(results,aes(logFC,-log10(P.Value),color = Q.Value < qtreshold,
+                          protein = id)) + 
     geom_point(size=2,alpha=0.7) + 
     scale_color_manual(values= c("Grey",brewer.pal(n=3,name = "Set2")[1]),
                        labels=c("Non-significant","Significant"),
@@ -772,7 +773,7 @@ plot_volcano_label <- function(contrasts,results,qtreshold=0.05,xlims = NA, ylim
   }
   
   
-  return(ggplotly(g, tooltip = c(results$id)))
+  return(toWebGL(g))
 }
 
 plot_volcano_color <- function(contrasts,results,color.list=NA,qtreshold=0.05,color.name="",

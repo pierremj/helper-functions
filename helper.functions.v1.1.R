@@ -1218,6 +1218,36 @@ define_contrasts <- function(nums,denoms,contrast_table = NULL){
   return(contrast_table)
 }
 
+###8. Sequence Processing------------------------------------------------------
+extract_flanking_sequence <- function(prot_id,sites,fasta,n=7){
+  #Extracts the flanking sequence of a site in a protein
+  #Args:
+  #	prot_id: Character - The protein name
+  #	sites: Numeric - The sites to be extracted
+  #	fasta: A Biostring MultipleAASequence object
+  #	n: The number of amino acids to extract
+  #
+  
+  if(prot_id %in% names(fasta)){
+    motifs <- character(length(sites))
+    for(i in 1:length(sites)){
+      if(sites[i] < n+1){
+        motifs[i] <- as.character(fasta[[prot_id]][1:(sites[i]+n)])
+        #Total character length must be 15
+        motifs[i] <- paste0(str_c(rep("_",(n*2+1)-str_length(motifs[i])),collapse=""),motifs[i])
+      } else if(sites[i] > (length(fasta[[prot_id]])-n)){
+        motifs[i] <- as.character(fasta[[prot_id]][(sites[i]-n):length(fasta[[prot_id]])])
+        motifs[i] <- paste0(motifs[i],str_c(rep("_",(n*2+1)-str_length(motifs[i])),collapse=""))
+      } else{
+        motifs[i] <- as.character(fasta[[prot_id]][(sites[i]-n):(sites[i]+n)])
+      }
+    }
+    return(motifs)
+  } else{
+    warning(paste0("Protein ",prot_id," not found in fasta file"))
+    return(NULL)
+  }
+}
 
 
 
